@@ -58,6 +58,7 @@ Options:
                       (claude or claude-project target only; can be combined with --profile or --with)
   --config <path>     Load install intent from ecc-install.json
   --dry-run    Show the install plan without copying files
+  --update     Copy only missing or changed destination files (skip identical files)
   --json       Emit machine-readable plan/result JSON
   --help       Show this help text
 
@@ -80,6 +81,9 @@ function showHelp(exitCode = 0) {
 function printHumanPlan(plan, dryRun) {
   console.log(`${dryRun ? 'Dry-run install plan' : 'Applying install plan'}:\n`);
   console.log(`Mode: ${plan.mode}`);
+  if (plan.updateOnly) {
+    console.log('Update: only missing or changed files will be copied (identical files skipped)');
+  }
   console.log(`Target: ${plan.target}`);
   console.log(`Adapter: ${plan.adapter.id}`);
   console.log(`Install root: ${plan.installRoot}`);
@@ -115,13 +119,27 @@ function printHumanPlan(plan, dryRun) {
   }
 
   console.log(`\n${dryRun ? 'Planned' : 'Applied'} file operations:`);
+  const skippedOperationSet = new Set([
+    ...(Array.isArray(plan.skippedUpToDate) ? plan.skippedUpToDate : []),
+    ...(Array.isArray(plan.skippedOperations) ? plan.skippedOperations : []),
+  ]);
   for (const operation of plan.operations) {
+    if (skippedOperationSet.has(operation)) {
+      continue;
+    }
     console.log(`- ${operation.sourceRelativePath} -> ${operation.destinationPath}`);
   }
 
   if (Array.isArray(plan.skippedOperations) && plan.skippedOperations.length > 0) {
     console.log('\nSkipped file operations:');
     for (const operation of plan.skippedOperations) {
+      console.log(`- ${operation.sourceRelativePath} -> ${operation.destinationPath}`);
+    }
+  }
+
+  if (Array.isArray(plan.skippedUpToDate) && plan.skippedUpToDate.length > 0) {
+    console.log(`\nSkipped up-to-date operations (--update): ${plan.skippedUpToDate.length}`);
+    for (const operation of plan.skippedUpToDate) {
       console.log(`- ${operation.sourceRelativePath} -> ${operation.destinationPath}`);
     }
   }
@@ -165,6 +183,7 @@ function main() {
       homeDir: process.env.HOME || os.homedir(),
       claudeRulesDir: process.env.CLAUDE_RULES_DIR || null,
     });
+    rawPlan.updateOnly = Boolean(request.update);
 
     if (options.dryRun) {
       const plan = previewInstallPlan(rawPlan);

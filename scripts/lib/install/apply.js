@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
@@ -14,6 +15,55 @@ const { buildInstallIndex, rewriteRelativeLinks } = require('./link-rewrite');
 
 function isMarkdownPath(filePath) {
   return /\.(md|mdx|markdown)$/i.test(String(filePath || ''));
+}
+
+function sha256File(filePath) {
+  const hash = crypto.createHash('sha256');
+  hash.update(fs.readFileSync(filePath));
+  return hash.digest('hex');
+}
+
+function filesHaveSameContent(sourcePath, destinationPath) {
+  const sourceStat = fs.statSync(sourcePath);
+  const destinationStat = fs.statSync(destinationPath);
+  if (sourceStat.size !== destinationStat.size) {
+    return false;
+  }
+  return sha256File(sourcePath) === sha256File(destinationPath);
+}
+
+// `--update` semantics: a `copy-file` operation is a no-op when the
+// destination is already current. Git checkouts reset every source mtime to
+// the checkout time, so mtime alone is unreliable for repo-based installs;
+// content identity is the deciding signal. A destination that is strictly
+// newer than the source is also preserved (the `cp -u` / `rsync --update`
+// spirit: never clobber a newer local file). Missing destinations are always
+// copied.
+function isDestinationUpToDate(sourcePath, destinationPath) {
+  let sourceStat;
+  try {
+    sourceStat = fs.statSync(sourcePath);
+  } catch (error) {
+    if (error && error.code === 'ENOENT') {
+      return false;
+    }
+    throw error;
+  }
+
+  let destinationStat;
+  try {
+    destinationStat = fs.statSync(destinationPath);
+  } catch (error) {
+    if (error && error.code === 'ENOENT') {
+      return false;
+    }
+    throw error;
+  }
+
+  if (destinationStat.mtimeMs > sourceStat.mtimeMs) {
+    return true;
+  }
+  return filesHaveSameContent(sourcePath, destinationPath);
 }
 
 // Map every copy-file operation to { sourceRel, destRel } so relative links in
@@ -146,12 +196,19 @@ function buildResolvedClaudeHooks(plan) {
 
 function previewInstallPlan(plan) {
   const migration = prepareClaudeSkillMigration(plan);
+  const upToDateOperations = plan.updateOnly
+    ? migration.appliedOperations.filter(operation => (
+      operation.kind === 'copy-file'
+      && isDestinationUpToDate(operation.sourcePath, operation.destinationPath)
+    ))
+    : [];
   return {
     ...plan,
     statePreview: migration.finalState,
     plannedOperations: [...plan.operations],
     operations: migration.appliedOperations,
     skippedOperations: migration.skippedOperations,
+    skippedUpToDate: upToDateOperations,
     warnings: [
       ...(Array.isArray(plan.warnings) ? plan.warnings : []),
       ...migration.warnings,
@@ -180,6 +237,8 @@ function applyInstallPlan(plan, dependencies = {}) {
     persistInstallState(plan.installStatePath, migration.bridgeState);
   }
 
+  const skippedUpToDate = [];
+
   for (const operation of appliedPlan.operations) {
     assertSafeClaudeSkillOperation(appliedPlan, operation);
     fs.mkdirSync(path.dirname(operation.destinationPath), { recursive: true });
@@ -205,6 +264,15 @@ function applyInstallPlan(plan, dependencies = {}) {
         : {};
       const mergedValue = deepMergeJson(currentValue, filteredPayload);
       fs.writeFileSync(operation.destinationPath, formatJson(mergedValue), 'utf8');
+      continue;
+    }
+
+    if (
+      appliedPlan.updateOnly
+      && operation.kind === 'copy-file'
+      && isDestinationUpToDate(operation.sourcePath, operation.destinationPath)
+    ) {
+      skippedUpToDate.push(operation);
       continue;
     }
 
@@ -255,6 +323,7 @@ function applyInstallPlan(plan, dependencies = {}) {
     plannedOperations: [...plan.operations],
     operations: migration.appliedOperations,
     skippedOperations: migration.skippedOperations,
+    skippedUpToDate,
     warnings: [
       ...(Array.isArray(plan.warnings) ? plan.warnings : []),
       ...migration.warnings,

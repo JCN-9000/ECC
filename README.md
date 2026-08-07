@@ -298,6 +298,12 @@ Windows:
 
 This profile intentionally excludes `hooks-runtime`.
 
+Reinstalls write every file again by default. Add `--update` to copy only missing or changed destinations, so files that already match are left untouched:
+
+```bash
+./install.sh --profile minimal --target claude --update
+```
+
 Claude manual installs place each skill directly under `~/.claude/skills/<skill-name>/` (or `.claude/skills/<skill-name>/` for `claude-project`) so Claude Code can discover it. When upgrading an older ECC manual install, the installer migrates only nested `skills/ecc/` files recorded in ECC install-state. If a flat skill directory is user-owned, ECC preserves it, prints a conflict warning, and keeps any older managed copy tracked for a safe uninstall instead of overwriting user files.
 
 For the normal core profile with hooks disabled:

@@ -1059,6 +1059,245 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('--update copies only missing or outdated files', () => {
+    const tempDir = createTempDir('install-apply-update-');
+    const targetRoot = path.join(tempDir, '.claude');
+    const installStatePath = path.join(targetRoot, 'ecc', 'install-state.json');
+
+    try {
+      const sourceDir = path.join(tempDir, 'sources');
+      fs.mkdirSync(sourceDir, { recursive: true });
+
+      const sourcePaths = {};
+      const destinationPaths = {};
+      for (const name of ['missing', 'identical', 'newer', 'older']) {
+        const sourcePath = path.join(sourceDir, `${name}.md`);
+        fs.writeFileSync(sourcePath, `source ${name}\n`);
+        sourcePaths[name] = sourcePath;
+        destinationPaths[name] = path.join(targetRoot, 'rules', 'ecc', 'common', `${name}.md`);
+      }
+
+      const now = Date.now();
+
+      // 'identical' destination has the same content but an older mtime
+      // (git checkouts reset source mtimes to checkout time) -> skipped
+      fs.mkdirSync(path.dirname(destinationPaths.identical), { recursive: true });
+      fs.writeFileSync(destinationPaths.identical, 'source identical\n');
+      fs.utimesSync(sourcePaths.identical, new Date(now), new Date(now));
+      fs.utimesSync(destinationPaths.identical, new Date(now - 2000), new Date(now - 2000));
+
+      // 'newer' destination exists, differs in content, and is newer than the
+      // source -> skipped (never clobber a newer local file)
+      fs.mkdirSync(path.dirname(destinationPaths.newer), { recursive: true });
+      fs.writeFileSync(destinationPaths.newer, 'existing newer\n');
+      fs.utimesSync(sourcePaths.newer, new Date(now - 2000), new Date(now - 2000));
+      fs.utimesSync(destinationPaths.newer, new Date(now + 2000), new Date(now + 2000));
+
+      // 'older' destination exists, differs in content, and is older than the
+      // source -> overwritten
+      fs.mkdirSync(path.dirname(destinationPaths.older), { recursive: true });
+      fs.writeFileSync(destinationPaths.older, 'existing older\n');
+      fs.utimesSync(sourcePaths.older, new Date(now + 2000), new Date(now + 2000));
+      fs.utimesSync(destinationPaths.older, new Date(now - 2000), new Date(now - 2000));
+
+      const result = applyInstallPlan({
+        targetRoot,
+        installStatePath,
+        updateOnly: true,
+        statePreview: {
+          schemaVersion: 'ecc.install.v1',
+          installedAt: new Date().toISOString(),
+          target: {
+            id: 'test-install',
+            kind: 'project',
+            root: targetRoot,
+            installStatePath,
+          },
+          request: {
+            profile: null,
+            modules: ['test-update'],
+            includeComponents: [],
+            excludeComponents: [],
+            legacyLanguages: [],
+            legacyMode: false,
+          },
+          resolution: {
+            selectedModules: ['test-update'],
+            skippedModules: [],
+          },
+          source: {
+            repoVersion: null,
+            repoCommit: null,
+            manifestVersion: 1,
+          },
+          operations: [],
+        },
+        operations: Object.keys(sourcePaths).map(name => ({
+          kind: 'copy-file',
+          moduleId: 'test-update',
+          sourcePath: sourcePaths[name],
+          sourceRelativePath: `rules/ecc/common/${name}.md`,
+          destinationPath: destinationPaths[name],
+          strategy: 'preserve-relative-path',
+          ownership: 'managed',
+          scaffoldOnly: false,
+        })),
+      });
+
+      assert.ok(fs.existsSync(destinationPaths.missing), 'missing destination should be copied');
+      assert.strictEqual(fs.readFileSync(destinationPaths.missing, 'utf8'), 'source missing\n');
+      assert.strictEqual(
+        fs.readFileSync(destinationPaths.identical, 'utf8'),
+        'source identical\n',
+        'identical-content destination should be left untouched even when older'
+      );
+      assert.strictEqual(
+        fs.readFileSync(destinationPaths.newer, 'utf8'),
+        'existing newer\n',
+        'newer destination should be left untouched'
+      );
+      assert.strictEqual(
+        fs.readFileSync(destinationPaths.older, 'utf8'),
+        'source older\n',
+        'older destination with different content should be overwritten'
+      );
+
+      const skipped = result.skippedUpToDate || [];
+      assert.strictEqual(skipped.length, 2, 'identical and newer destinations should be skipped');
+      assert.deepStrictEqual(
+        skipped.map(operation => operation.sourceRelativePath).sort(),
+        ['rules/ecc/common/identical.md', 'rules/ecc/common/newer.md']
+      );
+    } finally {
+      cleanup(tempDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('--update without flag still overwrites existing destinations', () => {
+    const tempDir = createTempDir('install-apply-overwrite-');
+    const targetRoot = path.join(tempDir, '.claude');
+    const installStatePath = path.join(targetRoot, 'ecc', 'install-state.json');
+
+    try {
+      const sourcePath = path.join(tempDir, 'rule.md');
+      fs.writeFileSync(sourcePath, 'source content\n');
+
+      const destinationPath = path.join(targetRoot, 'rules', 'ecc', 'common', 'rule.md');
+      fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
+      fs.writeFileSync(destinationPath, 'existing content\n');
+
+      // Destination is newer, but updateOnly is not set -> still overwritten
+      const now = Date.now();
+      fs.utimesSync(sourcePath, new Date(now - 2000), new Date(now - 2000));
+      fs.utimesSync(destinationPath, new Date(now + 2000), new Date(now + 2000));
+
+      applyInstallPlan({
+        targetRoot,
+        installStatePath,
+        updateOnly: false,
+        statePreview: {
+          schemaVersion: 'ecc.install.v1',
+          installedAt: new Date().toISOString(),
+          target: {
+            id: 'test-install',
+            kind: 'project',
+            root: targetRoot,
+            installStatePath,
+          },
+          request: {
+            profile: null,
+            modules: ['test-overwrite'],
+            includeComponents: [],
+            excludeComponents: [],
+            legacyLanguages: [],
+            legacyMode: false,
+          },
+          resolution: {
+            selectedModules: ['test-overwrite'],
+            skippedModules: [],
+          },
+          source: {
+            repoVersion: null,
+            repoCommit: null,
+            manifestVersion: 1,
+          },
+          operations: [],
+        },
+        operations: [{
+          kind: 'copy-file',
+          moduleId: 'test-overwrite',
+          sourcePath,
+          sourceRelativePath: 'rules/ecc/common/rule.md',
+          destinationPath,
+          strategy: 'preserve-relative-path',
+          ownership: 'managed',
+          scaffoldOnly: false,
+        }],
+      });
+
+      assert.strictEqual(fs.readFileSync(destinationPath, 'utf8'), 'source content\n');
+    } finally {
+      cleanup(tempDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('--update flows into the plan in JSON dry-run output', () => {
+    const homeDir = createTempDir('install-apply-home-');
+    const projectDir = createTempDir('install-apply-project-');
+
+    try {
+      const result = run(
+        ['--profile', 'core', '--update', '--dry-run', '--json'],
+        { cwd: projectDir, homeDir }
+      );
+      assert.strictEqual(result.code, 0, result.stderr);
+
+      const output = JSON.parse(result.stdout);
+      assert.strictEqual(output.dryRun, true);
+      assert.strictEqual(output.plan.updateOnly, true);
+      assert.ok(Array.isArray(output.plan.skippedUpToDate));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('--update dry-run lists only files that would be copied', () => {
+    const homeDir = createTempDir('install-apply-update-dryrun-');
+    const projectDir = createTempDir('install-apply-project-');
+
+    try {
+      const sourcePath = path.join(process.cwd(), 'commands', 'aside.md');
+      const destPath = path.join(homeDir, '.config', 'opencode', 'commands', 'aside.md');
+      fs.mkdirSync(path.dirname(destPath), { recursive: true });
+      fs.writeFileSync(destPath, fs.readFileSync(sourcePath, 'utf8'));
+      const now = Date.now();
+      fs.utimesSync(destPath, new Date(now), new Date(now));
+
+      const result = run(
+        ['--profile', 'core', '--target', 'opencode', '--update', '--dry-run'],
+        { cwd: projectDir, homeDir }
+      );
+      assert.strictEqual(result.code, 0, result.stderr);
+
+      const skippedHeader = 'Skipped up-to-date operations (--update)';
+      const plannedSection = result.stdout.split(skippedHeader)[0];
+      const skippedSection = result.stdout.split(skippedHeader)[1] || '';
+
+      assert.ok(
+        !plannedSection.includes(destPath),
+        'up-to-date file should not appear in the planned list'
+      );
+      assert.ok(
+        skippedSection.includes(destPath),
+        'up-to-date file should appear in the skipped list'
+      );
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectDir);
+    }
+  })) passed++; else failed++;
+
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
   process.exit(failed > 0 ? 1 : 0);
 }
