@@ -1289,8 +1289,12 @@ function runTests() {
         'up-to-date file should not appear in the planned list'
       );
       assert.ok(
-        skippedSection.includes(destPath),
-        'up-to-date file should appear in the skipped list'
+        !skippedSection.includes(destPath),
+        'up-to-date file should not be listed individually in the skipped report'
+      );
+      assert.ok(
+        /^\s*: \d+ files already current/.test(skippedSection),
+        'skipped report should show a short summary count only'
       );
     } finally {
       cleanup(homeDir);

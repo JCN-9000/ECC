@@ -138,10 +138,7 @@ function printHumanPlan(plan, dryRun) {
   }
 
   if (Array.isArray(plan.skippedUpToDate) && plan.skippedUpToDate.length > 0) {
-    console.log(`\nSkipped up-to-date operations (--update): ${plan.skippedUpToDate.length}`);
-    for (const operation of plan.skippedUpToDate) {
-      console.log(`- ${operation.sourceRelativePath} -> ${operation.destinationPath}`);
-    }
+    console.log(`\nSkipped up-to-date operations (--update): ${plan.skippedUpToDate.length} files already current`);
   }
 
   if (!dryRun) {
