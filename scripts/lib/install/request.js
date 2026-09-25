@@ -31,7 +31,6 @@ function parseInstallArgs(argv) {
     locale: null,
     enableHooks: false,
     noHooks: false,
-    update: false,
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -78,8 +77,6 @@ function parseInstallArgs(argv) {
       parsed.noHooks = true;
     } else if (arg === '--dry-run') {
       parsed.dryRun = true;
-    } else if (arg === '--update') {
-      parsed.update = true;
     } else if (arg === '--json') {
       parsed.json = true;
     } else if (arg === '--help' || arg === '-h') {
@@ -162,7 +159,6 @@ function normalizeInstallRequest(options = {}) {
     legacyLanguages,
     hookConsent,
     configPath: config?.path || options.configPath || null,
-    update: Boolean(options.update),
   };
 }
 

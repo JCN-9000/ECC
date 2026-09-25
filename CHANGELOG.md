@@ -69,7 +69,6 @@
 
 ### Changed
 
-- Installer (`install.sh` / `install.ps1` / `node scripts/install-apply.js`) gained an opt-in `--update` flag: `copy-file` operations skip destinations that already exist with identical content, and never clobber a strictly newer destination file. Content identity (SHA-256) is the deciding signal rather than mtime, so fresh git checkouts do not re-copy every unchanged file. Merge operations and install-state writes still always run. Default behavior is unchanged.
 - Default MCP connector set reduced to a single connector (`chrome-devtools`) per the new connector policy (`docs/MCP-CONNECTOR-POLICY.md`). The six previous defaults (`github`, `context7`, `exa`, `memory`, `playwright`, `sequential-thinking`) were retired after the June 2026 audit: their jobs are covered by skills wrapping CLIs/REST APIs (`github-ops`, `documentation-lookup`, `exa-search`, e2e skills) or by harness-native features (memory, extended thinking, web search). All six remain opt-in via `mcp-configs/mcp-servers.json`.
 - OpenCode home installs now use its canonical `~/.config/opencode` location, safely discover and migrate unchanged ECC-managed files from legacy `~/.opencode` installs, and preserve modified legacy files for review. Bundled agents inherit the model selected by the user instead of pinning an Anthropic provider.
 - `skill-comply` is now part of the install manifest and npm distribution, with generated Python caches excluded from both install and package surfaces.

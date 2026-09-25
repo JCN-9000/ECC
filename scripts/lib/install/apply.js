@@ -45,55 +45,6 @@ function isMarkdownPath(filePath) {
   return /\.(md|mdx|markdown)$/i.test(String(filePath || ''));
 }
 
-function sha256File(filePath) {
-  const hash = crypto.createHash('sha256');
-  hash.update(fs.readFileSync(filePath));
-  return hash.digest('hex');
-}
-
-function filesHaveSameContent(sourcePath, destinationPath) {
-  const sourceStat = fs.statSync(sourcePath);
-  const destinationStat = fs.statSync(destinationPath);
-  if (sourceStat.size !== destinationStat.size) {
-    return false;
-  }
-  return sha256File(sourcePath) === sha256File(destinationPath);
-}
-
-// `--update` semantics: a `copy-file` operation is a no-op when the
-// destination is already current. Git checkouts reset every source mtime to
-// the checkout time, so mtime alone is unreliable for repo-based installs;
-// content identity is the deciding signal. A destination that is strictly
-// newer than the source is also preserved (the `cp -u` / `rsync --update`
-// spirit: never clobber a newer local file). Missing destinations are always
-// copied.
-function isDestinationUpToDate(sourcePath, destinationPath) {
-  let sourceStat;
-  try {
-    sourceStat = fs.statSync(sourcePath);
-  } catch (error) {
-    if (error && error.code === 'ENOENT') {
-      return false;
-    }
-    throw error;
-  }
-
-  let destinationStat;
-  try {
-    destinationStat = fs.statSync(destinationPath);
-  } catch (error) {
-    if (error && error.code === 'ENOENT') {
-      return false;
-    }
-    throw error;
-  }
-
-  if (destinationStat.mtimeMs > sourceStat.mtimeMs) {
-    return true;
-  }
-  return filesHaveSameContent(sourcePath, destinationPath);
-}
-
 function transformInstallContent(operation, content) {
   if (!operation.contentTransform) {
     return content;
@@ -458,12 +409,6 @@ function previewInstallPlan(plan) {
     operations: migration.appliedOperations,
   };
   preflightClaudeSettingsOperations(appliedPlan);
-  const upToDateOperations = plan.updateOnly
-    ? migration.appliedOperations.filter(operation => (
-      operation.kind === 'copy-file'
-      && isDestinationUpToDate(operation.sourcePath, operation.destinationPath)
-    ))
-    : [];
   const hookConsentWarnings = planMaterializesHookRuntime(plan) && plan.hookConsent !== 'enabled'
     ? ['Applying this plan requires an explicit hook decision: --enable-hooks or --no-hooks.']
     : [];
@@ -473,7 +418,6 @@ function previewInstallPlan(plan) {
     plannedOperations: [...plan.operations],
     operations: migration.appliedOperations,
     skippedOperations: migration.skippedOperations,
-    skippedUpToDate: upToDateOperations,
     warnings: [
       ...(Array.isArray(plan.warnings) ? plan.warnings : []),
       ...migration.warnings,
@@ -541,7 +485,6 @@ function applyInstallPlanLocked(plan, dependencies = {}, settingsLockHeld = fals
     }
 
     let finalState;
-    const skippedUpToDate = [];
     try {
       for (const operation of appliedPlan.operations) {
       assertSafeInstallOperation(appliedPlan, operation);
@@ -613,15 +556,6 @@ function applyInstallPlanLocked(plan, dependencies = {}, settingsLockHeld = fals
         const mergedValue = deepMergeJson(currentValue, filteredPayload);
         fs.writeFileSync(operation.destinationPath, formatJson(mergedValue), 'utf8');
         writtenDestinations.add(operation.destinationPath);
-        continue;
-      }
-
-      if (
-        appliedPlan.updateOnly
-        && operation.kind === 'copy-file'
-        && isDestinationUpToDate(operation.sourcePath, operation.destinationPath)
-      ) {
-        skippedUpToDate.push(operation);
         continue;
       }
 
@@ -757,7 +691,6 @@ function applyInstallPlanLocked(plan, dependencies = {}, settingsLockHeld = fals
       plannedOperations: [...plan.operations],
       operations: migration.appliedOperations,
       skippedOperations: migration.skippedOperations,
-      skippedUpToDate,
       reconciledExcludedPaths: excludedPathsRemoved,
       warnings: [
         ...(Array.isArray(plan.warnings) ? plan.warnings : []),

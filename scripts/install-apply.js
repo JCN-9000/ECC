@@ -40,7 +40,7 @@ Targets:
   antigravity  - Install rules, workflows, skills, and agents to ./.agents/
   codex        - Install shared agents/config into ~/.codex/
   gemini       - Install project-local Gemini config into ./.gemini/
-  opencode     - Install shared commands/hooks/config into ~/.config/opencode/
+  opencode     - Install into OPENCODE_CONFIG_DIR, XDG_CONFIG_HOME/opencode, or ~/.config/opencode/
   codebuddy    - Install commands, agents, skills, and flattened rules into ./.codebuddy/
   joycode      - Install commands, agents, skills, and flattened rules into ./.joycode/
   qwen         - Install commands, agents, skills, rules, and Qwen config into ~/.qwen/
@@ -64,7 +64,6 @@ Options:
                       when the selected profile/modules materialize hooks)
   --no-hooks          Install everything except the automatic hook runtime
   --dry-run    Show the install plan without copying files
-  --update     Copy only missing or changed destination files (skip identical files)
   --json       Emit machine-readable plan/result JSON
   --help       Show this help text
 
@@ -87,9 +86,6 @@ function showHelp(exitCode = 0) {
 function printHumanPlan(plan, dryRun) {
   console.log(`${dryRun ? 'Dry-run install plan' : 'Applying install plan'}:\n`);
   console.log(`Mode: ${plan.mode}`);
-  if (plan.updateOnly) {
-    console.log('Update: only missing or changed files will be copied (identical files skipped)');
-  }
   console.log(`Target: ${plan.target}`);
   console.log(`Adapter: ${plan.adapter.id}`);
   console.log(`Install root: ${plan.installRoot}`);
@@ -125,14 +121,7 @@ function printHumanPlan(plan, dryRun) {
   }
 
   console.log(`\n${dryRun ? 'Planned' : 'Applied'} file operations:`);
-  const skippedOperationSet = new Set([
-    ...(Array.isArray(plan.skippedUpToDate) ? plan.skippedUpToDate : []),
-    ...(Array.isArray(plan.skippedOperations) ? plan.skippedOperations : []),
-  ]);
   for (const operation of plan.operations) {
-    if (skippedOperationSet.has(operation)) {
-      continue;
-    }
     console.log(`- ${operation.sourceRelativePath} -> ${operation.destinationPath}`);
   }
 
@@ -148,10 +137,6 @@ function printHumanPlan(plan, dryRun) {
     for (const removedPath of plan.reconciledExcludedPaths) {
       console.log(`- removed ${removedPath}`);
     }
-  }
-
-  if (Array.isArray(plan.skippedUpToDate) && plan.skippedUpToDate.length > 0) {
-    console.log(`\nSkipped up-to-date operations (--update): ${plan.skippedUpToDate.length} files already current`);
   }
 
   if (!dryRun) {
@@ -194,7 +179,6 @@ async function main() {
       env: process.env,
       claudeRulesDir: process.env.CLAUDE_RULES_DIR || null,
     });
-    rawPlan.updateOnly = Boolean(request.update);
 
     if (options.dryRun) {
       const plan = previewInstallPlan(rawPlan);
