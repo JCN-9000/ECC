@@ -44,7 +44,7 @@ It does **not** auto-register the full ECC command/agent/instruction catalog in 
 After installation, the `ecc-install` CLI is also available:
 
 ```bash
-npx ecc-install typescript
+npx ecc-universal install typescript
 ```
 
 ### Option 2: Direct Use
@@ -138,9 +138,9 @@ a pointer to this command if the build step is missing.
 
 | Hook | Event | Purpose |
 |------|-------|---------|
-| Prettier | `file.edited` | Auto-format JS/TS |
+| Prettier | `filesystem.changed` | Auto-format JS/TS |
 | TypeScript | `tool.execute.after` | Check for type errors |
-| console.log | `file.edited` | Warn about debug statements |
+| console.log | `filesystem.changed` | Warn about debug statements |
 | Notification | `session.idle` | Desktop notification (cross-platform) |
 | Security | `tool.execute.before` | Check for secrets |
 | Git Push Reminder | `tool.execute.before` | Remind to review before pushing |
@@ -148,11 +148,10 @@ a pointer to this command if the build step is missing.
 | Long Command Reminder | `tool.execute.before` | Remind about long-running commands |
 | Session Context | `session.created` | Load project context |
 | Console Log Audit | `session.idle` | Audit edited files for console.log |
-| File Watcher | `file.watcher.updated` | Track file system changes |
-| Todo Progress | `todo.updated` | Log task completion progress |
-| Shell Environment | `shell.env` | Inject environment variables |
-| Session Compacting | `experimental.session.compacting` | Preserve context across compaction |
-| Permission Auto-Approve | `permission.ask` | Auto-approve safe operations |
+| File Watcher | `filesystem.changed` | Track file system changes |
+| Shell Environment | `shell.create.before` | Inject environment variables |
+| Session Compacting | `session.compaction` | Preserve context across compaction |
+| Permission Auto-Approve | `permission.evaluate` | Auto-approve safe operations |
 
 ### Custom Tools
 
@@ -224,9 +223,6 @@ Full configuration in `opencode.json`:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "anthropic/claude-sonnet-4-5",
-  "small_model": "anthropic/claude-haiku-4-5",
-  "plugin": ["./plugins"],
   "instructions": [
     "skills/tdd-workflow/SKILL.md",
     "skills/security-review/SKILL.md"
@@ -235,6 +231,10 @@ Full configuration in `opencode.json`:
   "command": { /* 24 commands */ }
 }
 ```
+
+The reference config intentionally leaves model selection to OpenCode. Connect a
+provider and select a model in OpenCode; ECC's primary agent uses that global
+selection, and its subagents inherit the invoking primary agent's model.
 
 ## License
 

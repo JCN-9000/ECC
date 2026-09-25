@@ -31,10 +31,8 @@ OpenCode is an alternative CLI for AI-assisted development that supports **all**
 | `Stop` | `session.idle` or `session.status` | Session lifecycle |
 | `SessionStart` | `session.created` | Session begins |
 | `SessionEnd` | `session.deleted` | Session ends |
-| N/A | `file.edited` | OpenCode-only: file changes |
-| N/A | `file.watcher.updated` | OpenCode-only: file system watch |
-| N/A | `message.updated` | OpenCode-only: message changes |
-| N/A | `lsp.client.diagnostics` | OpenCode-only: LSP integration |
+| N/A | `filesystem.changed` | OpenCode-only: file creations, changes, deletions |
+| N/A | `session.message.content.updated` | OpenCode-only: message content changes |
 | N/A | `tui.toast.show` | OpenCode-only: notifications |
 
 ### Converting Hooks to Plugins
