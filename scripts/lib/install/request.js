@@ -1,6 +1,7 @@
 'use strict';
 
 const { validateInstallModuleIds, LOCALE_ALIAS_TO_COMPONENT_ID, listSupportedLocales } = require('../install-manifests');
+const { resolveHookConsentFlags } = require('./hook-consent');
 
 const LEGACY_INSTALL_TARGETS = ['claude', 'claude-project', 'cursor', 'antigravity'];
 
@@ -28,6 +29,8 @@ function parseInstallArgs(argv) {
     excludeComponentIds: [],
     languages: [],
     locale: null,
+    enableHooks: false,
+    noHooks: false,
     update: false,
   };
 
@@ -69,6 +72,10 @@ function parseInstallArgs(argv) {
       }
       parsed.locale = locale;
       index += 1;
+    } else if (arg === '--enable-hooks') {
+      parsed.enableHooks = true;
+    } else if (arg === '--no-hooks') {
+      parsed.noHooks = true;
     } else if (arg === '--dry-run') {
       parsed.dryRun = true;
     } else if (arg === '--update') {
@@ -122,6 +129,10 @@ function normalizeInstallRequest(options = {}) {
     ...(Array.isArray(options.legacyLanguages) ? options.legacyLanguages : []),
     ...(Array.isArray(options.languages) ? options.languages : []),
   ]).map(language => language.toLowerCase()));
+  const hookConsent = resolveHookConsentFlags(options);
+  if (hookConsent === 'declined' && moduleIds.includes('hooks-runtime')) {
+    throw new Error('--no-hooks cannot be combined with an explicit hooks-runtime module selection');
+  }
   const hasManifestBaseSelection = Boolean(profileId) || moduleIds.length > 0 || includeComponentIds.length > 0;
   const hasNonLocaleManifestSelection = Boolean(profileId)
     || moduleIds.length > 0
@@ -149,6 +160,7 @@ function normalizeInstallRequest(options = {}) {
     includeComponentIds,
     excludeComponentIds,
     legacyLanguages,
+    hookConsent,
     configPath: config?.path || options.configPath || null,
     update: Boolean(options.update),
   };
